@@ -1,0 +1,20 @@
+{
+  "name": "irdr-analises",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "IRDR | ANALISES: análise semanal da contagem oficial de inventário (IRDR).",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "engines": { "node": ">=22.12.0" },
+  "dependencies": {
+    "astro": "7.3.5",
+    "chart.js": "4.5.1",
+    "jspdf": "4.2.1",
+    "jspdf-autotable": "5.0.8",
+    "xlsx-js-style": "1.2.0"
+  }
+}

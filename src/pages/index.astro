@@ -1,0 +1,20 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Sidebar from "../components/Sidebar.astro";
+import Topbar from "../components/Topbar.astro";
+---
+<Layout>
+  <a class="sr-only" href="#content">Pular para o conteúdo</a>
+  <div class="app">
+    <Sidebar />
+    <div class="main">
+      <Topbar />
+      <main class="content" id="content" tabindex="-1"></main>
+    </div>
+  </div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script>
+    import "../lib/main.js";
+  </script>
+</Layout>
