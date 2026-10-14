@@ -41,8 +41,9 @@ Este repositório é público e não contém nenhuma planilha. Os dados que cada
 1. **Importar dados**: arraste os exports do ONT Base (.xlsx ou .csv). O sistema reconhece cada planilha pelos cabeçalhos (Pick Area/Overview, DD/NZ, Completed Research, STU). Reimportar a mesma semana atualiza, sem duplicar.
 2. Escolha a semana na faixa de semanas e a janela (4, 6, 8, 12 ou todas).
 3. Analise em Visão geral, Erros e pesquisas, DPMO por área e Ofensores.
-4. Registre STUs em Feedbacks e gere ações no Plano de ação.
-5. **Gerar relatório PDF / Exportar Excel**: baixa o relatório da semana selecionada.
+4. **Dive Deep**: análise completa de todas as semanas importadas (ou da janela), com comparação entre semanas, Pareto dos erros, áreas ofensoras, recorrência de associados, aplicação de STU e visão por gestor. Exporta em PDF e Excel.
+5. Registre STUs em Feedbacks e gere ações no Plano de ação.
+6. **Gerar relatório PDF / Exportar Excel**: baixa o relatório da semana selecionada.
 
 Para levar os dados a outro computador: Importar dados › Seus dados › backup `.json`. Limpar os dados de navegação apaga o que foi importado.
 

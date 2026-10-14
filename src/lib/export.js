@@ -371,5 +371,248 @@
     doc.save(fname(ctx, "pdf"));
   }
 
-  IRDR.exp = { xlsx, pdf, download, feedbackTemplate };
+  // ---------------- Dive Deep (PDF e Excel) ----------------
+  const ddName = (dd, ext) => `IRDR_DiveDeep_${dd.ctx.wh || "FC"}_${an().wkLabel(dd.keys[0])}-${an().wkLabel(dd.keys[dd.keys.length - 1])}_${stamp()}.${ext}`;
+  const covText = (c) => IRDR.stuStatusText(c);
+
+  function deepXlsx(dd) {
+    const A = an(), L = A.wkLabel, PL = A.PRIO_LABEL;
+    const r0 = (v) => (v == null ? "" : Math.round(v));
+    const pct = (v) => (v == null ? "" : Number((v * 100).toFixed(1)));
+    const wb = XLSX.utils.book_new();
+    const t = dd.tot;
+    const resumo = [
+      ["IRDR | ANALISES — Dive Deep"],
+      [`${dd.ctx.wh} · ${dd.range} · ${dd.keys.length} semana(s) · gerado em ${IRDR.store.isoDateTime(new Date())}`],
+      [],
+      ["Indicador", "Valor"],
+      ["Semanas analisadas", dd.keys.map(L).join(" ")],
+      ["DPMO consolidado", r0(t.dpmo)],
+      ["Registros contados", t.counted ?? ""],
+      ["Registros defeituosos", t.defects],
+      ["Net Zero / Double Defect", `${t.nz} / ${t.dd}`],
+      ["Erros pesquisados", t.errors],
+      ["Erros sem ofensor", t.unknown],
+      ["Associados com erro", t.associates],
+      ["Reincidentes", dd.recur.reincident],
+      ["Reincidiram após STU", dd.recur.afterStu],
+      ["Aplicação de STU (%)", pct(dd.stu.rate)],
+      ["Casos de STU realizados / com erro", `${dd.stu.done} / ${dd.stu.pairs}`],
+      ["Pesquisas pendentes", t.pending],
+      [],
+      ["Principais conclusões"],
+      ...dd.findings.map((f) => [plain(f.html)]),
+      [],
+      ["Recomendações", "Prioridade"],
+      ...dd.recs.map((r) => [r.text, PL[r.priority] || r.priority]),
+    ];
+    const wsR = sheet(resumo, [90, 22], { headerRow: 3, title: true });
+    delete wsR["!autofilter"];
+    XLSX.utils.book_append_sheet(wb, wsR, "Resumo");
+
+    const cov = (k) => dd.stu.rows.find((c) => c.key === k);
+    XLSX.utils.book_append_sheet(wb, sheet([
+      ["Semana", "DPMO", "Contados", "Defeituosos", "Net Zero", "Double Defect", "Unid. sobra", "Unid. falta", "Erros pesquisados", "Associados", "Sem ofensor", "Pesquisas pendentes", "Principal erro", "Principal processo", "STU", "Pick Area importado", "DD/NZ importado", "Pesquisas importadas"],
+      ...dd.weeks.map((w) => [L(w.key), r0(w.s.dpmo), w.s.counted ?? "", w.s.defects, w.s.nz, w.s.dd, w.s.unitsFound, w.s.unitsMissing, w.has.rs ? w.s.errors : "", w.has.rs ? w.s.associates : "", w.has.rs ? w.s.unknown : "", w.s.pending, w.errors[0] ? `${w.errors[0][0]} (${w.errors[0][1]})` : "", w.paths[0] ? `${w.paths[0][0]} (${w.paths[0][1]})` : "", cov(w.key) ? covText(cov(w.key)) : "", w.has.ov ? "Sim" : "Não", w.has.dd ? "Sim" : "Não", w.has.rs ? "Sim" : "Não"]),
+    ], [8, 9, 10, 11, 9, 11, 10, 10, 14, 11, 11, 15, 28, 22, 14, 14, 13, 15]), "Comparativo semanal");
+
+    XLSX.utils.book_append_sheet(wb, sheet([
+      ["Erro", "Erro (PT)", "Processos", "Quantidade", "% do total", "% acumulado", "Associados", ...dd.keys.map(L)],
+      ...dd.errors.map((e) => [e.error, e.pt, e.paths.map(([p, n]) => `${p} (${n})`).join(", "), e.n, pct(e.share), pct(e.cum), e.assoc, ...dd.keys.map((k) => e.byWeek[k] || 0)]),
+    ], [28, 28, 26, 11, 10, 11, 11, ...dd.keys.map(() => 7)]), "Principais erros");
+
+    XLSX.utils.book_append_sheet(wb, sheet([
+      ["Processo", "Área", "Erros", "% do total"],
+      ...dd.pathAreas.map((a) => [a.path, a.area, a.n, pct(a.share)]),
+    ], [24, 28, 9, 10]), "Áreas ofensoras");
+
+    XLSX.utils.book_append_sheet(wb, sheet([
+      ["Pick area", "DPMO do período", "Registros contados", "Defeituosos", "Registros DD/NZ", "Erros pesquisados", ...dd.keys.map((k) => `DPMO ${L(k)}`)],
+      ...dd.pick.map((a) => [a.area, r0(a.dpmo), a.counted || "", a.defects, a.records, a.errors, ...dd.keys.map((k) => r0(a.cells[k] && a.cells[k].dpmo))]),
+    ], [16, 14, 16, 12, 14, 15, ...dd.keys.map(() => 10)]), "Pick areas");
+
+    XLSX.utils.book_append_sheet(wb, sheet([
+      ["Associado", "Prioridade", "Gestor", "Tempo de casa", "Erros no período", "Erros no histórico", "Semanas com erro", "Erro repetido", "Erros", "Reincidiu após STU", "Último STU"],
+      ...dd.recur.list.map((o) => [o.login, PL[o.prio], o.manager, Number(o.tenure) || o.tenure, o.nScope, o.total, o.weeks.map(L).join(" "), o.same ? `${o.same[0]} (${o.same[1]})` : "", o.errors.map(([e, n]) => `${e} (${n})`).join(", "), o.afterStu ? "Sim" : "Não", o.lastFeedback ? `${L(o.lastFeedback.key)} ${o.lastFeedback.date || ""}` : ""]),
+    ], [14, 11, 12, 12, 14, 15, 18, 24, 34, 16, 16], { prioCol: 1 }), "Recorrência");
+
+    XLSX.utils.book_append_sheet(wb, sheet([
+      ["Semana", "Status", "Associados com erro", "STU realizado", "Pendente", "Cobertura %", "STUs registrados", "Associados pendentes"],
+      ...dd.stu.rows.map((c) => [L(c.key), covText(c), c.associates, c.done, c.notDone, c.rate == null ? "" : Math.round(c.rate * 100), c.stuCount, c.pendingLogins.join(", ")]),
+    ], [8, 18, 18, 13, 10, 11, 15, 50]), "Aplicação STU");
+
+    XLSX.utils.book_append_sheet(wb, sheet([
+      ["Gestor", "Erros", "% dos erros", "Associados", "Reincidentes", "Crítica", "STU realizado", "Casos com erro", "Cobertura STU %", "Principal erro"],
+      ...dd.mgrs.map((m) => [m.manager, m.errors, pct(m.errors / (dd.tot.attributed || 1)), m.associates, m.reincident, m.critica, m.stuDone, m.stuPairs, m.stuRate == null ? "" : Math.round(m.stuRate * 100), m.topError ? `${m.topError[0]} (${m.topError[1]})` : ""]),
+    ], [14, 8, 11, 11, 12, 8, 13, 13, 14, 28]), "Por gestor");
+
+    const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    download(new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), ddName(dd, "xlsx"));
+  }
+
+  async function deepPdf(dd) {
+    const A = an(), L = A.wkLabel, PL = A.PRIO_LABEL, fi = A.fmtInt, fp = A.fmtPct;
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 14;
+    const header = () => {
+      doc.setFillColor(...C.ink); doc.rect(0, 0, W, 4, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(...C.ink);
+      doc.text("IRDR | ANALISES · DIVE DEEP", M, 11);
+      doc.setFont("helvetica", "normal"); doc.setTextColor(...C.ink3);
+      doc.text(`${dd.ctx.wh} · ${dd.range} · ${dd.keys.length} semana(s)`, W - M, 11, { align: "right" });
+      doc.setDrawColor(...C.line); doc.line(M, 14, W - M, 14);
+    };
+    const section = (title, y, sub) => {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...C.ink); doc.text(title, M, y);
+      if (sub) { doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...C.ink3); doc.text(sub, M, y + 4.5); }
+      return y + (sub ? 8 : 5);
+    };
+    const ensure = (y, need) => { if (y > H - need) { doc.addPage(); header(); return 24; } return y; };
+    const ts = {
+      theme: "plain", margin: { left: M, right: M, top: 20 },
+      styles: { font: "helvetica", fontSize: 8.5, cellPadding: 2.2, textColor: C.ink, lineColor: C.line, lineWidth: { bottom: 0.2 } },
+      headStyles: { fillColor: C.surface2, textColor: C.ink3, fontStyle: "bold", fontSize: 7.5 },
+      didDrawPage: header,
+    };
+    const prioCell = (col) => (d) => {
+      if (d.section === "body" && d.column.index === col) {
+        const k = { "CRÍTICA": "CRITICA", ALTA: "ALTA", "MÉDIA": "MEDIA", OK: "OK" }[d.cell.raw];
+        if (k) { d.cell.styles.textColor = C[k]; d.cell.styles.fontStyle = "bold"; d.cell.styles.fillColor = WASH[k]; }
+      }
+    };
+    const t = dd.tot;
+
+    // ---- Página 1: resumo executivo ----
+    header();
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...C.ink3);
+    doc.text("DIVE DEEP · CONTAGEM OFICIAL DE INVENTÁRIO", M, 24);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(22); doc.setTextColor(...C.ink);
+    doc.text(`${dd.ctx.wh} · ${dd.range}`, M, 33);
+    const kpis = [
+      ["Erros pesquisados", fi(t.errors), `${t.associates} associado(s) · ${t.unknown} sem ofensor`],
+      ["DPMO consolidado", t.dpmo != null ? fi(t.dpmo) : "—", t.dpmo != null ? `${fi(t.counted)} registros contados` : "sem Pick Area importado"],
+      ["Registros defeituosos", fi(t.defects), `${t.nz} Net Zero · ${t.dd} Double Defect`],
+      ["Reincidentes", fi(dd.recur.reincident), `de ${dd.recur.associates} · ${dd.recur.afterStu} após STU`],
+      ["Aplicação de STU", dd.stu.rate != null ? fp(dd.stu.rate, 0) : "—", dd.stu.pairs ? `${dd.stu.done} de ${dd.stu.pairs} casos` : "sem casos no período"],
+    ];
+    const kw = (W - 2 * M - 4 * 4) / 5;
+    kpis.forEach(([l, v, sub], i) => {
+      const x = M + i * (kw + 4), y = 40;
+      doc.setDrawColor(...C.line); doc.setFillColor(255, 255, 255); doc.roundedRect(x, y, kw, 26, 2, 2, "FD");
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...C.ink3); doc.text(l, x + 4, y + 6);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(17); doc.setTextColor(...C.ink); doc.text(v, x + 4, y + 15);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(...C.ink3); doc.text(doc.splitTextToSize(sub, kw - 8), x + 4, y + 21);
+    });
+    const colW = (W - 2 * M - 10) / 2;
+    const bullets = (title, items, x, y0, color) => {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.setTextColor(...C.ink); doc.text(title, x, y0);
+      let y = y0 + 8;
+      doc.setFontSize(9); doc.setFont("helvetica", "normal");
+      for (const it of items) {
+        const lines = doc.splitTextToSize(it.text, colW - 6);
+        if (y + lines.length * 4.2 > H - 14) break;
+        doc.setFillColor(...(it.color || color)); doc.circle(x + 1, y - 1.2, 0.9, "F");
+        doc.setTextColor(...C.ink2); doc.text(lines, x + 4, y);
+        y += lines.length * 4.2 + 2.8;
+      }
+    };
+    bullets("Principais conclusões", dd.findings.map((f) => ({ text: plain(f.html) })), M, 78, C.primary);
+    bullets("Recomendações", dd.recs.map((r) => ({ text: r.text, color: C[r.priority] || C.primary })), M + colW + 10, 78, C.primary);
+
+    // ---- Página 2: comparativo semanal ----
+    doc.addPage(); header();
+    let y = section("Comparativo entre semanas", 24, dd.keys.length > 1 ? "Erros por processo (barras) e DPMO (linha)" : "Uma semana importada: a comparação aparece com duas ou mais semanas");
+    if (dd.keys.length > 1) {
+      const img = await chartImage(IRDR.ddWeeksCfg(dd, { static: true }), 900, 300);
+      const iw = W - 2 * M;
+      doc.addImage(img, "PNG", M, y, iw, iw * 300 / 900, undefined, "FAST");
+      y += iw * 300 / 900 + 6;
+    }
+    const cov = (k) => dd.stu.rows.find((c) => c.key === k);
+    y = ensure(y, 50);
+    doc.autoTable({ ...ts, startY: y,
+      head: [["Semana", "DPMO", "Contados", "Defeituosos", "NZ", "DD", "Erros", "Associados", "Sem ofensor", "Pendentes", "Principal erro", "STU"]],
+      body: dd.weeks.map((w) => [L(w.key), w.s.dpmo != null ? fi(w.s.dpmo) : "—", w.s.counted != null ? fi(w.s.counted) : "—", w.has.ov || w.has.dd ? fi(w.s.defects) : "—", w.has.dd ? w.s.nz : "—", w.has.dd ? w.s.dd : "—", w.has.rs ? w.s.errors : "—", w.has.rs ? w.s.associates : "—", w.has.rs ? w.s.unknown : "—", w.has.dd ? w.s.pending : "—", w.errors[0] ? `${w.errors[0][0]} (${w.errors[0][1]})` : "—", cov(w.key) ? covText(cov(w.key)) : "—"]),
+      columnStyles: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => [i, { halign: "right" }])),
+      didParseCell: (d) => { if (d.section === "body" && d.column.index === 11) { const v = d.cell.raw; d.cell.styles.fontStyle = "bold"; d.cell.styles.textColor = v === "Não realizado" ? C.CRITICA : v === "Parcial" ? C.ALTA : v === "Realizado" || v === "STU registrado" ? C.OK : C.ink3; } },
+    });
+
+    // ---- Página 3: erros e áreas ----
+    doc.addPage(); header();
+    y = section("Principais erros (Pareto)", 24, `${dd.errors.length} tipo(s) de erro · ${t.errors} erro(s) pesquisado(s)`);
+    if (dd.errors.length) {
+      const h = Math.min(10, dd.errors.length) * 26 + 70;
+      const img = await chartImage(IRDR.ddParetoCfg(dd, { static: true }), 900, h);
+      const iw = (W - 2 * M) * 0.62;
+      doc.addImage(img, "PNG", M, y, iw, iw * h / 900, undefined, "FAST");
+      y += iw * h / 900 + 6;
+      y = ensure(y, 40);
+      doc.autoTable({ ...ts, startY: y,
+        head: [["Erro", "Erro (PT)", "Processos", "Qtd.", "%", "Acum.", "Assoc.", ...(dd.keys.length > 1 ? dd.keys.map(L) : [])]],
+        body: dd.errors.map((e) => [e.error, e.pt || "—", e.paths.map(([p]) => p).join(", "), e.n, fp(e.share, 0), fp(e.cum, 0), e.assoc, ...(dd.keys.length > 1 ? dd.keys.map((k) => e.byWeek[k] || "·") : [])]),
+        columnStyles: Object.fromEntries([3, 4, 5, 6, ...dd.keys.map((_, i) => 7 + i)].map((i) => [i, { halign: "right" }])),
+      });
+      y = doc.lastAutoTable.finalY + 10;
+    }
+    y = ensure(y, 50);
+    y = section("Áreas mais ofensoras", y, "Processo › área da pesquisa e pick areas");
+    doc.autoTable({ ...ts, startY: y, tableWidth: (W - 2 * M) * 0.48,
+      head: [["Processo", "Área", "Erros", "%"]],
+      body: dd.pathAreas.map((a) => [a.path, a.area, a.n, fp(a.share, 0)]),
+      columnStyles: { 2: { halign: "right", fontStyle: "bold" }, 3: { halign: "right" } },
+    });
+    const leftEnd = doc.lastAutoTable.finalY;
+    doc.autoTable({ ...ts, startY: y, margin: { left: M + (W - 2 * M) * 0.52, right: M, top: 20 },
+      head: [["Pick area", "DPMO", "Defeituosos", "DD/NZ", "Erros"]],
+      body: dd.pick.slice(0, 15).map((a) => [a.area, a.dpmo != null ? fi(a.dpmo) : "—", fi(a.defects), a.records, a.errors]),
+      columnStyles: { 1: { halign: "right", fontStyle: "bold" }, 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
+    });
+    y = Math.max(leftEnd, doc.lastAutoTable.finalY) + 10;
+
+    // ---- Página 4: recorrência, STU e gestores ----
+    doc.addPage(); header();
+    const r = dd.recur;
+    y = section("Recorrência de associados", 24, `${r.associates} associado(s) com erro · 1 erro: ${r.dist.one} · 2 erros: ${r.dist.two} · 3+: ${r.dist.more} · mesmo erro repetido: ${r.sameError} · erraram após STU: ${r.afterStu}`);
+    if (r.list.length) {
+      doc.autoTable({ ...ts, startY: y,
+        head: [["Associado", "Prioridade", "Gestor", "Período", "Histórico", "Semanas", "Erro repetido", "Erros", "Último STU"]],
+        body: r.list.map((o) => [o.login, PL[o.prio], o.manager || "—", o.nScope, o.total, o.weeks.map(L).join(" "), o.same ? `${o.same[0]} ×${o.same[1]}` : "tipos diferentes", o.errors.map(([e, n]) => e + (n > 1 ? ` ×${n}` : "")).join(", "), o.lastFeedback ? L(o.lastFeedback.key) : "nenhum"]),
+        columnStyles: { 0: { font: "courier", fontStyle: "bold" }, 3: { halign: "right", fontStyle: "bold" }, 4: { halign: "right" }, 7: { cellWidth: 60 } },
+        didParseCell: prioCell(1),
+      });
+      y = doc.lastAutoTable.finalY + 10;
+    } else {
+      doc.setFontSize(9); doc.setTextColor(...C.ink2); doc.text("Nenhum reincidente no histórico importado.", M, y + 2); y += 10;
+    }
+    y = ensure(y, 45);
+    y = section("Aplicação de STU por semana", y, `Cobertura ${dd.stu.rate != null ? fp(dd.stu.rate, 0) : "—"} (${dd.stu.done} de ${dd.stu.pairs})${dd.stu.lagAvg != null ? ` · prazo médio ${fi(dd.stu.lagAvg)} dia(s) após a contagem` : ""} · ${dd.stu.registered} STU(s) registrados no período`);
+    doc.autoTable({ ...ts, startY: y, tableWidth: 230,
+      head: [["Semana", "Status", "Com erro", "Realizado", "Pendente", "Cobertura", "STUs", "Pendentes"]],
+      body: dd.stu.rows.map((c) => [L(c.key), covText(c), c.associates || "—", c.associates ? c.done : "—", c.associates ? c.notDone : "—", c.rate == null ? "—" : fp(c.rate, 0), c.stuCount || "—", c.pendingLogins.join(", ") || "—"]),
+      columnStyles: Object.fromEntries([2, 3, 4, 5, 6].map((i) => [i, { halign: "right" }])),
+      didParseCell: (d) => { if (d.section === "body" && d.column.index === 1) { const v = d.cell.raw; d.cell.styles.fontStyle = "bold"; d.cell.styles.textColor = v === "Não realizado" ? C.CRITICA : v === "Parcial" ? C.ALTA : v === "Realizado" || v === "STU registrado" ? C.OK : C.ink3; } },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+    if (dd.mgrs.length) {
+      y = ensure(y, 40);
+      y = section("Por gestor", y);
+      doc.autoTable({ ...ts, startY: y, tableWidth: 230,
+        head: [["Gestor", "Erros", "% dos erros", "Associados", "Reincidentes", "Crítica", "STU", "Principal erro"]],
+        body: dd.mgrs.map((m) => [m.manager, m.errors, fp(m.errors / (t.attributed || 1), 0), m.associates, m.reincident, m.critica, m.stuPairs ? `${m.stuDone}/${m.stuPairs}` : "—", m.topError ? `${m.topError[0]} (${m.topError[1]})` : "—"]),
+        columnStyles: Object.fromEntries([1, 2, 3, 4, 5, 6].map((i) => [i, { halign: "right" }])),
+      });
+    }
+
+    const n = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= n; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8); doc.setTextColor(...C.ink3); doc.setFont("helvetica", "normal");
+      doc.text(`Gerado em ${IRDR.store.isoDateTime(new Date()).slice(0, 16)} · Contagem oficial IRDR · uso interno`, M, H - 7);
+      doc.text(`${i} / ${n}`, W - M, H - 7, { align: "right" });
+    }
+    doc.save(ddName(dd, "pdf"));
+  }
+
+  IRDR.exp = { xlsx, pdf, download, feedbackTemplate, deepXlsx, deepPdf };
 })();

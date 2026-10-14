@@ -497,6 +497,41 @@ mark { background: var(--high-wash); color: var(--ink); border-radius: 3px; padd
   .gl-grid { grid-template-columns: 1fr; }
 }
 
+/* ---------- Dive Deep ---------- */
+.dd-scope { padding: 16px 20px; display: grid; gap: 14px; }
+.dd-scope-top { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.dd-exp { display: flex; gap: 8px; flex-wrap: wrap; }
+.dd-scope .table-wrap { border: 1px solid var(--line); border-radius: var(--radius-md); }
+table.dd-cov td, table.dd-cov th { padding-top: 8px; padding-bottom: 8px; }
+th.c, td.c { text-align: center; }
+.dd-chk { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; }
+.dd-chk svg.i { width: 15px; height: 15px; }
+.dd-chk.on { color: var(--ok); background: var(--ok-wash); }
+.dd-chk.off { color: var(--ink-3); background: var(--surface-2); }
+.dd-pct { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--ink-2); }
+.dd-pct > span:last-child { min-width: 34px; text-align: right; }
+.dd-bar { flex: 1; min-width: 50px; height: 7px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.dd-bar i { display: block; height: 100%; border-radius: 99px; }
+table.dd-cmp td:first-child { font-weight: 600; color: var(--ink); white-space: nowrap; }
+table.dd-cmp td.n { white-space: nowrap; }
+.dd-recs { display: grid; gap: 10px; }
+.dd-rec { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px 14px; border-radius: var(--radius-md); background: var(--surface-2); }
+.dd-rec .dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; }
+.dd-rec p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.dd-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.dd-stats.dd-stats-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.dd-stats > div { padding: 12px 14px; border-radius: var(--radius-md); background: var(--surface-2); display: grid; gap: 4px; }
+.dd-stats span { font-size: 12px; color: var(--ink-3); }
+.dd-stats b { font-size: 22px; font-weight: 700; color: var(--ink); letter-spacing: -.02em; }
+.dd-stats .bad { background: var(--crit-wash); }
+.dd-stats .bad b, .dd-stats .bad span { color: var(--crit); }
+.dd-dl { display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; margin: 0; font-size: 13px; }
+.dd-dl dt { color: var(--ink-2); }
+.dd-dl dd { margin: 0; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.dd-dl dd.bad { color: var(--crit); }
+tr.muted-row td { color: var(--ink-3); }
+@media (max-width: 900px) { .dd-stats, .dd-stats.dd-stats-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 @media (max-width: 1280px) {
   .g-kpi, .kinds, .prio-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .g-3-1, .g-2, .g-1-1-1, .g-fb { grid-template-columns: 1fr; }

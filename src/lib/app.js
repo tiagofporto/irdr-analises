@@ -37,6 +37,7 @@
 
   const ROUTES = [
     { id: "visao", label: "Visão geral", icon: "layout-dashboard", group: "Análise" },
+    { id: "deepdive", label: "Dive Deep", icon: "target", group: "Análise" },
     { id: "erros", label: "Erros e pesquisas", icon: "scan-barcode", group: "Análise" },
     { id: "areas", label: "DPMO por área", icon: "map-pinned", group: "Análise" },
     { id: "ofensores", label: "Ofensores", icon: "users", group: "Análise" },
@@ -240,7 +241,7 @@
   };
 
   const PRIO_COLOR = () => ({ CRITICA: css("--crit-solid"), ALTA: css("--high-solid"), MEDIA: css("--med-solid"), OK: css("--ok-solid") });
-  const INS_TONE = { "triangle-alert": "t-red", "arrow-up-right": "t-red", "arrow-down-right": "t-green", "message-square": "t-amber", info: "t-blue", "map-pinned": "t-purple", "circle-dot": "t-blue" };
+  const INS_TONE = { "triangle-alert": "t-red", "arrow-up-right": "t-red", "arrow-down-right": "t-green", "message-square": "t-amber", info: "t-blue", "map-pinned": "t-purple", "circle-dot": "t-blue", layers: "t-blue", target: "t-red", "chart-no-axes-column": "t-purple", "refresh-cw": "t-amber", minus: "t-blue" };
   const PATH_COLORS = ["--primary", "--purple", "--teal", "--high-solid", "--secondary", "--ok-solid"];
 
   function workload(ev, total) {
@@ -334,6 +335,205 @@
         options: { responsive: true, maintainAspectRatio: false, cutout: "76%", plugins: { legend: { display: false }, tooltip: vals.some(Boolean) ? tooltipStyle() : { enabled: false } } },
       });
     },
+  };
+
+  // ---------- Dive Deep ----------
+  ui.dd = { scope: "all" };
+  const PRIO_VAR = { CRITICA: "crit", ALTA: "high", MEDIA: "med", OK: "ok" };
+  function ddDelta(c, lowerIsBetter = true) {
+    if (!c) return "";
+    return delta(c.vb, c.va, lowerIsBetter);
+  }
+  const check = (ok, label) => `<span class="dd-chk ${ok ? "on" : "off"}" title="${label}: ${ok ? "importado" : "não importado"}">${icon(ok ? "circle-check" : "minus")}</span>`;
+  const barCell = (v, max, col = "var(--primary)") => `<span class="dd-bar"><i style="width:${max ? Math.max(4, (v / max) * 100) : 0}%;background:${col}"></i></span>`;
+
+  VIEWS.deepdive = {
+    html() {
+      const dd = (IRDR._dd = an.deepDive(ctx, ui.dd.scope));
+      const { tot, weeks, keys, errors, paths, pathAreas, pick, recur, stu, mgrs, cmp } = dd;
+      const multi = keys.length > 1;
+      const winRange = ctx.win.length ? `${wkLabel(ctx.win[0])}–${wkLabel(ctx.win[ctx.win.length - 1])}` : "";
+      const allRange = ctx.weeks.length ? `${wkLabel(ctx.weeks[0])}–${wkLabel(ctx.weeks[ctx.weeks.length - 1])}` : "";
+      const scopeSeg = ctx.win.length === ctx.weeks.length ? `<span class="badge live">${keys.length} semana(s) · ${esc(allRange)}</span>` : `<div class="seg" role="group" aria-label="Período do Dive Deep">${segBtn("dd.scope", "all", `Todas as semanas (${allRange})`, ui.dd.scope)}${segBtn("dd.scope", "win", `Janela atual (${winRange})`, ui.dd.scope)}</div>`;
+      const exp = `<button class="btn" data-act="dd-xlsx">${icon("file-spreadsheet")}Exportar Excel</button><button class="btn primary" data-act="dd-pdf">${icon("file-down")}Dive Deep em PDF</button>`;
+      const maxErr = errors.length ? errors[0].n : 1;
+      const maxWkErr = Math.max(1, ...weeks.map((w) => w.s.errors));
+
+      // Comparativo semanal: métricas nas linhas, semanas nas colunas
+      const rowsCmp = [
+        ["DPMO", (w) => (w.s.dpmo != null ? fmtInt(w.s.dpmo) : "—"), cmp.dpmo],
+        ["Registros contados", (w) => (w.s.counted != null ? fmtInt(w.s.counted) : "—")],
+        ["Registros defeituosos", (w) => (w.has.ov || w.has.dd ? fmtInt(w.s.defects) : "—"), cmp.defects],
+        ["Net Zero · Double Defect", (w) => (w.has.dd ? `${w.s.nz} · ${w.s.dd}` : "—")],
+        ["Unidades sobra · falta", (w) => (w.has.dd ? `+${fmtInt(w.s.unitsFound)} · -${fmtInt(w.s.unitsMissing)}` : "—")],
+        ["Erros pesquisados", (w) => (w.has.rs ? w.s.errors : "—"), cmp.errors],
+        ["Associados com erro", (w) => (w.has.rs ? w.s.associates : "—"), cmp.associates],
+        ["Sem ofensor (Unknown)", (w) => (w.has.rs ? w.s.unknown : "—")],
+        ["Pesquisas pendentes", (w) => (w.has.dd ? w.s.pending : "—")],
+        ["Principal erro", (w) => (w.errors[0] ? `${esc(w.errors[0][0])} (${w.errors[0][1]})` : "—")],
+        ["Principal processo", (w) => (w.paths[0] ? `${esc(w.paths[0][0])} (${w.paths[0][1]})` : "—")],
+        ["STU", (w) => { const c = stu.rows.find((x) => x.key === w.key); return c ? stuStatus(c) : "—"; }],
+      ];
+
+      return `${head("Dive Deep", `Análise completa ${multi ? `das ${keys.length} semanas importadas, com comparação entre elas` : "da semana importada"}: principais erros, áreas ofensoras, recorrência de associados e aplicação de STU.`, "", { noRail: true, noExport: true, noBadge: true })}
+      <div class="stack">
+        <div class="card dd-scope"><div class="dd-scope-top">${scopeSeg}<div class="dd-exp">${exp}</div></div>
+          <div class="table-wrap"><table class="dd-cov"><thead><tr><th>Dados importados</th>${weeks.map((w) => `<th class="c">${wkLabel(w.key)}</th>`).join("")}</tr></thead><tbody>
+            <tr><td>Pick Area (DPMO)</td>${weeks.map((w) => `<td class="c">${check(w.has.ov, "Pick Area")}</td>`).join("")}</tr>
+            <tr><td>Registros DD/NZ</td>${weeks.map((w) => `<td class="c">${check(w.has.dd, "DD/NZ")}</td>`).join("")}</tr>
+            <tr><td>Pesquisas concluídas</td>${weeks.map((w) => `<td class="c">${check(w.has.rs, "Pesquisas")}</td>`).join("")}</tr>
+            <tr><td>STU</td>${weeks.map((w) => `<td class="c">${check(w.has.stu, "STU")}</td>`).join("")}</tr>
+          </tbody></table></div></div>
+
+        <div class="grid g-kpi">
+          ${kpi({ ico: "target", tone: "t-blue", label: "Erros pesquisados", value: fmtInt(tot.errors), unit: `${tot.associates} assoc.`, dl: ddDelta(cmp.errors), foot: `${tot.unknown} sem ofensor · ${tot.weeksRs} semana(s) com pesquisa`, series: multi ? weeks.map((w) => (w.has.rs ? w.s.errors : null)) : null, color: css("--primary") })}
+          ${kpi({ ico: "activity", tone: "t-purple", label: "DPMO consolidado", value: tot.dpmo != null ? fmtInt(tot.dpmo) : "—", dl: ddDelta(cmp.dpmo), foot: tot.dpmo != null ? `${fmtInt(tot.counted)} registros contados em ${tot.weeksOv} semana(s)` : "Importe o export de Pick Area", series: multi ? weeks.map((w) => w.s.dpmo) : null, color: css("--purple") })}
+          ${kpi({ ico: "refresh-cw", tone: recur.reincident ? "t-red" : "t-green", label: "Reincidentes", value: fmtInt(recur.reincident), unit: recur.associates ? `de ${recur.associates}` : "", dl: recur.afterStu ? `<span class="delta bad">${icon("circle-alert")}${recur.afterStu} após STU</span>` : "", foot: recur.associates ? `${fmtPct(recur.rate, 0)} dos associados com erro` : "Sem erros atribuídos" })}
+          ${kpi({ ico: "message-square", tone: stu.rate == null ? "t-blue" : stu.rate >= 0.9 ? "t-green" : stu.rate >= 0.5 ? "t-amber" : "t-red", label: "Aplicação de STU", value: stu.rate != null ? fmtPct(stu.rate, 0) : "—", unit: stu.pairs ? `${stu.done} de ${stu.pairs}` : "", foot: stu.lagAvg != null ? `Prazo médio: ${fmtInt(stu.lagAvg)} dia(s) após a contagem` : `${stu.registeredAll} STU(s) registrados no total` })}
+        </div>
+
+        <div class="grid g-3-1">
+          <div class="card"><div class="card-head"><div><h2>Principais conclusões</h2><div class="sub">${esc(dd.range)} · geradas a partir dos dados importados</div></div><span class="badge">Automático</span></div>
+            <div class="card-body"><div class="diag">${dd.findings.map((i) => `<div class="diag-item"><span class="ico ${INS_TONE[i.icon] || "t-blue"}">${icon(i.icon)}</span><p>${i.html}</p></div>`).join("")}</div></div></div>
+          <div class="card"><div class="card-head"><div><h2>Recomendações</h2><div class="sub">Por prioridade</div></div></div>
+            <div class="card-body"><div class="dd-recs">${dd.recs.map((r) => `<div class="dd-rec"><span class="dot" style="background:var(--${PRIO_VAR[r.priority] || "primary"}-solid)"></span><p>${esc(r.text)}</p></div>`).join("")}</div>
+            <button class="btn soft" data-act="suggest" style="margin-top:12px;width:100%;justify-content:center;color:var(--primary);font-weight:600">${icon("list-checks")}Gerar ações no plano</button></div></div>
+        </div>
+
+        ${multi ? `<div class="card"><div class="card-head"><div><h2>Comparativo entre semanas</h2><div class="sub">Erros por processo (barras) e DPMO (linha). Variação: última semana com dado vs a anterior.</div></div></div>
+          <div class="card-body"><div class="chart-box" style="height:280px"><canvas id="ch-dd-weeks" role="img" aria-label="Erros por processo e DPMO por semana"></canvas></div></div>
+          <div class="table-wrap"><table class="dd-cmp"><thead><tr><th>Indicador</th>${weeks.map((w) => `<th class="n">${wkLabel(w.key)}</th>`).join("")}<th class="n">Variação</th></tr></thead><tbody>
+            ${rowsCmp.map(([l, f, c]) => `<tr><td>${l}</td>${weeks.map((w) => `<td class="n">${f(w)}</td>`).join("")}<td class="n">${c ? ddDelta(c) : ""}</td></tr>`).join("")}
+          </tbody></table></div></div>`
+        : `<div class="banner"><span class="ico t-blue">${icon("info")}</span><div><b>Uma semana importada</b><p>A comparação entre semanas aparece quando houver duas ou mais semanas importadas.</p></div></div>`}
+
+        <div class="card"><div class="card-head"><div><h2>Principais erros</h2><div class="sub">Pareto dos tipos de erro: quantidade, participação e acumulado</div></div><span class="badge">${errors.length} tipo(s)</span></div>
+          ${errors.length ? `<div class="card-body"><div class="chart-box" style="height:${Math.max(200, Math.min(10, errors.length) * 30 + 60)}px"><canvas id="ch-dd-pareto" role="img" aria-label="Pareto dos tipos de erro"></canvas></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Erro</th><th>Processos</th><th class="n">Qtd.</th><th style="min-width:140px">% do total</th><th class="n">Acumulado</th><th class="n">Associados</th>${multi ? weeks.map((w) => `<th class="n">${wkLabel(w.key)}</th>`).join("") : ""}</tr></thead><tbody>
+            ${errors.map((e) => `<tr><td><div class="two"><span><b>${esc(e.error)}</b></span>${e.pt ? `<small>${esc(e.pt)}</small>` : ""}</div></td><td class="small">${e.paths.map(([p, n]) => `${esc(p)}${e.paths.length > 1 ? ` (${n})` : ""}`).join(", ")}</td>
+              <td class="n"><b>${e.n}</b></td><td><span class="dd-pct">${barCell(e.n, maxErr)}<span>${fmtPct(e.share, 0)}</span></span></td><td class="n">${fmtPct(e.cum, 0)}</td><td class="n">${e.assoc}</td>
+              ${multi ? weeks.map((w) => `<td class="n${e.byWeek[w.key] ? "" : " muted"}">${w.has.rs ? e.byWeek[w.key] || "·" : "—"}</td>`).join("") : ""}</tr>`).join("")}
+          </tbody></table></div>` : `<div class="card-body"><p class="muted" style="margin:0">Sem pesquisas concluídas no período. Importe o export de Completed Research.</p></div>`}</div>
+
+        <div class="grid g-2">
+          <div class="card"><div class="card-head"><div><h2>Áreas mais ofensoras</h2><div class="sub">Processo › área da pesquisa, por quantidade de erros</div></div></div>
+            <div class="card-body">${pathAreas.length ? workloadAreas(pathAreas, tot.errors) : `<p class="muted small" style="margin:0">Sem pesquisas no período.</p>`}</div></div>
+          <div class="card"><div class="card-head"><div><h2>Pick areas</h2><div class="sub">${pick.some((a) => a.dpmo != null) ? "DPMO consolidado do período e registros DD/NZ" : "Registros DD/NZ por pick area (sem Pick Area importado para DPMO)"}</div></div></div>
+            <div class="card-body">${pick.length ? pickBars(pick) : `<p class="muted small" style="margin:0">Sem dados de pick area.</p>`}</div></div>
+        </div>
+
+        <div class="card"><div class="card-head"><div><h2>Recorrência de associados</h2><div class="sub">Considera todo o histórico importado até ${wkLabel(dd.ctx.ref)}</div></div><a class="btn link" href="#ofensores">Ver ofensores ${icon("arrow-right")}</a></div>
+          <div class="card-body"><div class="dd-stats">
+            <div><span>1 erro</span><b class="num">${recur.dist.one}</b></div>
+            <div><span>2 erros</span><b class="num">${recur.dist.two}</b></div>
+            <div><span>3 ou mais</span><b class="num">${recur.dist.more}</b></div>
+            <div><span>Mesmo erro repetido</span><b class="num">${recur.sameError}</b></div>
+            <div class="${recur.afterStu ? "bad" : ""}"><span>Erraram após STU</span><b class="num">${recur.afterStu}</b></div>
+          </div></div>
+          ${recur.list.length ? `<div class="table-wrap"><table><thead><tr><th>Associado</th><th>Prioridade</th><th>Gestor</th><th class="n">Erros no período</th><th class="n">Histórico</th><th>Semanas com erro</th><th>Erro repetido</th><th>STU</th></tr></thead><tbody>
+            ${recur.list.map((o) => `<tr class="click" data-act="open-off" data-login="${esc(o.login)}" tabindex="0"><td>${who(o.login, o.tenure ? o.tenure + " dias de casa" : "", o.prio)}</td><td>${prio(o.prio)}</td><td class="mono">${esc(o.manager || "—")}</td><td class="n"><b>${o.nScope}</b></td><td class="n">${o.total}</td>
+              <td>${o.weeks.map((k) => `<span class="tag plain">${wkLabel(k)}</span>`).join(" ")}</td><td>${o.same ? `${esc(o.same[0])} <span class="muted">×${o.same[1]}</span>` : `<span class="muted">tipos diferentes</span>`}</td><td>${stuCell(o)}</td></tr>`).join("")}
+          </tbody></table></div>` : `<p class="muted" style="padding:0 22px 20px;margin:0">Nenhum reincidente: todos os ${recur.associates} associado(s) com erro têm um único erro no histórico importado.</p>`}</div>
+
+        <div class="card"><div class="card-head"><div><h2>Aplicação de STU</h2><div class="sub">Associado com erro na semana e sem STU daquela semana ou posterior conta como não realizado</div></div><a class="btn link" href="#feedbacks">Registrar STU ${icon("arrow-right")}</a></div>
+          <div class="card-body"><div class="dd-stats dd-stats-6">
+            <div><span>Casos com erro</span><b class="num">${stu.pairs}</b></div>
+            <div><span>STU realizado</span><b class="num">${stu.done}</b></div>
+            <div class="${stu.pairs - stu.done ? "bad" : ""}"><span>Pendentes</span><b class="num">${stu.pairs - stu.done}</b></div>
+            <div><span>STUs no período</span><b class="num">${stu.registered}</b></div>
+            <div><span>Prazo médio</span><b class="num">${stu.lagAvg != null ? fmtInt(stu.lagAvg) + " d" : "—"}</b></div>
+            <div class="${recur.afterStu ? "bad" : ""}"><span>Erraram após STU</span><b class="num">${recur.afterStu}</b></div>
+          </div></div>
+          <div class="table-wrap"><table><thead><tr><th>Semana</th><th>Status</th><th class="n">Com erro</th><th class="n">Realizado</th><th class="n">Pendente</th><th style="min-width:150px">Cobertura</th><th class="n">STUs registrados</th><th>Associados pendentes</th></tr></thead><tbody>
+            ${stu.rows.map((c) => `<tr${dd.ctx.winSet.has(c.key) ? "" : ' class="muted-row"'}><td class="mono">${wkLabel(c.key)}</td><td>${stuStatus(c)}</td><td class="n">${c.associates || "—"}</td><td class="n">${c.associates ? c.done : "—"}</td><td class="n">${c.associates ? c.notDone : "—"}</td>
+              <td>${c.rate == null ? '<span class="muted">—</span>' : `<span class="dd-pct">${barCell(c.rate, 1, c.rate >= 0.9 ? "var(--ok-solid)" : c.rate >= 0.5 ? "var(--high-solid)" : "var(--crit-solid)")}<span>${fmtPct(c.rate, 0)}</span></span>`}</td><td class="n">${c.stuCount || "—"}</td>
+              <td class="small mono">${c.pendingLogins.slice(0, 8).map(esc).join(", ")}${c.pendingLogins.length > 8 ? "…" : ""}</td></tr>`).join("")}
+          </tbody></table></div></div>
+
+        <div class="card"><div class="card-head" style="padding-bottom:14px"><div><h2>Por gestor</h2><div class="sub">Erros atribuídos, reincidência e aplicação de STU por time</div></div></div>
+          ${mgrs.length ? `<div class="table-wrap"><table><thead><tr><th>Gestor</th><th class="n">Erros</th><th style="min-width:120px">% dos erros</th><th class="n">Associados</th><th class="n">Reincidentes</th><th class="n">Crítica</th><th style="min-width:130px">STU</th><th>Principal erro</th></tr></thead><tbody>
+            ${mgrs.map((m) => `<tr><td>${who(m.manager)}</td><td class="n"><b>${m.errors}</b></td><td><span class="dd-pct">${barCell(m.errors, mgrs[0].errors)}<span>${fmtPct(m.errors / (tot.attributed || 1), 0)}</span></span></td><td class="n">${m.associates}</td><td class="n">${m.reincident || "—"}</td><td class="n">${m.critica ? `<b style="color:var(--crit)">${m.critica}</b>` : "—"}</td>
+              <td>${m.stuRate == null ? "—" : `<span class="dd-pct">${barCell(m.stuRate, 1, m.stuRate >= 0.9 ? "var(--ok-solid)" : m.stuRate >= 0.5 ? "var(--high-solid)" : "var(--crit-solid)")}<span>${m.stuDone}/${m.stuPairs}</span></span>`}</td><td class="small">${m.topError ? `${esc(m.topError[0])} (${m.topError[1]})` : "—"}</td></tr>`).join("")}
+          </tbody></table></div>` : `<p class="muted" style="padding:0 22px 20px;margin:0">Sem erros atribuídos no período.</p>`}</div>
+      </div>`;
+    },
+    after() {
+      const dd = IRDR._dd;
+      if (!dd) return;
+      const el = $("#ch-dd-weeks");
+      if (el) mkChart(el, IRDR.ddWeeksCfg(dd));
+      const pe = $("#ch-dd-pareto");
+      if (pe) mkChart(pe, IRDR.ddParetoCfg(dd));
+    },
+  };
+
+  function workloadAreas(list, total) {
+    const top = list.slice(0, 8);
+    const max = top[0].n;
+    return `<div class="wload">${top.map((a, i) => {
+      const unk = a.path === "Unknown";
+      const col = unk ? "var(--line-strong)" : i === 0 ? "var(--crit-solid)" : `var(${PATH_COLORS[i % PATH_COLORS.length]})`;
+      return `<div class="wl-row"><div class="wl-line"><span class="dot" style="background:${col}"></span><b>${esc(a.area)}</b><span class="tagx" style="color:var(--ink-3);background:var(--surface-2)">${esc(a.path)}</span><span class="right">${a.n} erro(s)<strong>${fmtPct(a.n / (total || 1), 0)}</strong></span></div>
+        <div class="wl-bar"><i style="width:${Math.max(3, (a.n / max) * 100)}%;background:${col}"></i></div></div>`;
+    }).join("")}${list.length > 8 ? `<p class="muted small" style="margin:0">+ ${list.length - 8} área(s) com menos erros</p>` : ""}</div>`;
+  }
+  function pickBars(pick) {
+    const hasD = pick.some((a) => a.dpmo != null);
+    const rows = pick.filter((a) => (hasD ? a.dpmo != null || a.records : a.records)).slice(0, 10);
+    if (!rows.length) return `<p class="muted small" style="margin:0">Sem registros no período.</p>`;
+    const m = Math.max(1, ...rows.map((a) => (hasD ? a.dpmo || 0 : a.records)));
+    return `<div class="hbars">${rows.map((a) => { const v = hasD ? a.dpmo || 0 : a.records; return `<div class="hbar"><span class="lbl" title="${esc(a.area)}">${esc(a.area)}</span><span class="trk"><i style="width:${(v / m) * 100}%"></i></span><span class="v" title="${a.records} registro(s) DD/NZ">${hasD ? (a.dpmo != null ? fmtInt(a.dpmo) : "—") : a.records}</span></div>`; }).join("")}</div>
+      <p class="muted small" style="margin:10px 0 0">${hasD ? "Valor: DPMO do período. " : "Valor: registros DD/NZ. "}${rows.reduce((s, a) => s + a.records, 0)} registro(s) DD/NZ nessas áreas.</p>`;
+  }
+
+  // Gráficos do Dive Deep (também usados no PDF, com opts.static)
+  IRDR.ddWeeksCfg = function (dd, opts = {}) {
+    const cols = PATH_COLORS.map((v) => css(v) || "#3D5AFE");
+    const paths = dd.paths.map((p) => p.path);
+    return {
+      type: "bar",
+      data: {
+        labels: dd.weeks.map((w) => wkLabel(w.key)),
+        datasets: [
+          ...paths.map((p, i) => ({ type: "bar", label: p, data: dd.weeks.map((w) => (w.has.rs ? (w.paths.find(([x]) => x === p) || [0, 0])[1] : null)), backgroundColor: p === "Unknown" ? (opts.static ? "#cdd2df" : css("--line-strong")) : cols[i % cols.length], stack: "e", yAxisID: "y", borderRadius: 4, maxBarThickness: 46 })),
+          { type: "line", label: "DPMO", data: dd.weeks.map((w) => (w.s.dpmo == null ? null : Math.round(w.s.dpmo))), borderColor: opts.static ? "#0f1424" : css("--ink"), backgroundColor: opts.static ? "#0f1424" : css("--ink"), yAxisID: "y1", tension: 0.35, spanGaps: true, pointRadius: 4, borderWidth: 2.5 },
+        ],
+      },
+      options: {
+        responsive: !opts.static, maintainAspectRatio: false, ...(opts.static ? { animation: false } : {}), animations: { colors: false },
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true } }, tooltip: opts.static ? {} : tooltipStyle() },
+        scales: {
+          y: { stacked: true, beginAtZero: true, border: { display: false }, title: { display: true, text: "Erros" }, ticks: { precision: 0 }, grid: { color: opts.static ? "#e2e5ee" : css("--line") } },
+          y1: { position: "right", beginAtZero: true, border: { display: false }, title: { display: true, text: "DPMO" }, grid: { display: false }, ticks: { callback: (v) => fmtInt(v) } },
+          x: { stacked: true, grid: { display: false }, border: { display: false } },
+        },
+      },
+    };
+  };
+  IRDR.ddParetoCfg = function (dd, opts = {}) {
+    const top = dd.errors.slice(0, 10);
+    const primary = opts.static ? "#2f45e6" : css("--primary");
+    const warm = opts.static ? "#d97706" : css("--high-solid");
+    return {
+      type: "bar",
+      data: {
+        labels: top.map((e) => e.error),
+        datasets: [
+          { type: "bar", label: "Erros", data: top.map((e) => e.n), backgroundColor: primary, borderRadius: 4, xAxisID: "x", maxBarThickness: 22 },
+          { type: "line", label: "% acumulado", data: top.map((e) => Math.round(e.cum * 100)), borderColor: warm, backgroundColor: warm, xAxisID: "x1", pointRadius: 3, borderWidth: 2, tension: 0.2 },
+        ],
+      },
+      options: {
+        indexAxis: "y", responsive: !opts.static, maintainAspectRatio: false, ...(opts.static ? { animation: false } : {}), animations: { colors: false },
+        plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true } }, tooltip: opts.static ? {} : tooltipStyle() },
+        scales: {
+          x: { beginAtZero: true, position: "bottom", ticks: { precision: 0 }, border: { display: false }, grid: { color: opts.static ? "#e2e5ee" : css("--line") } },
+          x1: { min: 0, max: 100, position: "top", ticks: { callback: (v) => v + "%" }, grid: { display: false }, border: { display: false } },
+          y: { grid: { display: false }, border: { display: false } },
+        },
+      },
+    };
   };
 
   // ---------- Erros e pesquisas ----------
@@ -1007,6 +1207,8 @@
       case "glos-jump": { const t = document.getElementById(el.dataset.id); if (t) t.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); return; }
       case "glos-seen": ui.glos.seen = ui.glos.seen ? "" : "1"; return render();
       case "glos-clear": Object.assign(ui.glos, { q: "", path: "", seen: "" }); return render();
+      case "dd-pdf": el.disabled = true; try { await IRDR.exp.deepPdf(an.deepDive(ctx, ui.dd.scope)); toast("Dive Deep em PDF gerado."); } catch (e) { console.error(e); toast("Falha ao gerar o PDF: " + e.message, true); } el.disabled = false; return;
+      case "dd-xlsx": try { IRDR.exp.deepXlsx(an.deepDive(ctx, ui.dd.scope)); toast("Dive Deep em Excel gerado."); } catch (e) { console.error(e); toast("Falha ao gerar o Excel: " + e.message, true); } return;
       case "suggest": return suggest();
       case "demo": el.disabled = true; if (await loadDemo()) { toast("Dados de exemplo carregados (CNF2, S35–S41)."); D.settings.ref = 0; await store.save("settings"); render(); } else { toast("Não foi possível carregar os exemplos.", true); el.disabled = false; } return;
       case "backup": return IRDR.exp.download(new Blob([store.backupJson()], { type: "application/json" }), `IRDR_backup_${today()}.json`);
